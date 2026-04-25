@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Background,
   Controls,
@@ -8,6 +8,8 @@ import {
   type Edge,
   type Node,
   Handle,
+  useEdgesState,
+  useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import styles from "./GraphView.module.less";
@@ -41,6 +43,35 @@ type StateLegendItem = {
 };
 
 const NODE_SIZE = 84;
+const EDGE_HANDLES = {
+  target: {
+    left: {
+      top: "target-left-top",
+      mid: "target-left-mid",
+      bottom: "target-left-bottom",
+    },
+    right: {
+      top: "target-right-top",
+      mid: "target-right-mid",
+      bottom: "target-right-bottom",
+    },
+  },
+  source: {
+    left: {
+      top: "source-left-top",
+      mid: "source-left-mid",
+      bottom: "source-left-bottom",
+    },
+    right: {
+      top: "source-right-top",
+      mid: "source-right-mid",
+      bottom: "source-right-bottom",
+    },
+  },
+} as const;
+
+type EdgeLane = keyof typeof EDGE_HANDLES.target.left;
+type EdgeSide = keyof typeof EDGE_HANDLES.target;
 
 function simpleLayout(nodes: Node<FlowNodeData>[]): Node<FlowNodeData>[] {
   const GAP_X = 160;
@@ -52,12 +83,11 @@ function simpleLayout(nodes: Node<FlowNodeData>[]): Node<FlowNodeData>[] {
       type: "faNode",
       position: {
         x: index * GAP_X,
-        y: (index % 2) * GAP_Y, 
+        y: (index % 2) * GAP_Y,
       },
     };
   });
 }
-
 
 function FANode({ data }: { data: FlowNodeData }) {
   return (
@@ -73,17 +103,99 @@ function FANode({ data }: { data: FlowNodeData }) {
         position: "relative",
       }}
     >
-      {/* 左 */}
-      <Handle type="target" position={Position.Left} />
+      <Handle
+        id={EDGE_HANDLES.target.left.top}
+        type="target"
+        position={Position.Left}
+        className={[styles.edgeHandle, styles.topHandle].join(" ")}
+        isConnectable={false}
+      />
+      <Handle
+        id={EDGE_HANDLES.target.left.mid}
+        type="target"
+        position={Position.Left}
+        className={[styles.edgeHandle, styles.midHandle].join(" ")}
+        isConnectable={false}
+      />
+      <Handle
+        id={EDGE_HANDLES.target.left.bottom}
+        type="target"
+        position={Position.Left}
+        className={[styles.edgeHandle, styles.bottomHandle].join(" ")}
+        isConnectable={false}
+      />
+      <Handle
+        id={EDGE_HANDLES.target.right.top}
+        type="target"
+        position={Position.Right}
+        className={[styles.edgeHandle, styles.topHandle].join(" ")}
+        isConnectable={false}
+      />
+      <Handle
+        id={EDGE_HANDLES.target.right.mid}
+        type="target"
+        position={Position.Right}
+        className={[styles.edgeHandle, styles.midHandle].join(" ")}
+        isConnectable={false}
+      />
+      <Handle
+        id={EDGE_HANDLES.target.right.bottom}
+        type="target"
+        position={Position.Right}
+        className={[styles.edgeHandle, styles.bottomHandle].join(" ")}
+        isConnectable={false}
+      />
 
-      {/* 右 */}
-      <Handle type="source" position={Position.Right} />
+      <Handle
+        id={EDGE_HANDLES.source.right.top}
+        type="source"
+        position={Position.Right}
+        className={[styles.edgeHandle, styles.topHandle].join(" ")}
+        isConnectable={false}
+      />
+      <Handle
+        id={EDGE_HANDLES.source.right.mid}
+        type="source"
+        position={Position.Right}
+        className={[styles.edgeHandle, styles.midHandle].join(" ")}
+        isConnectable={false}
+      />
+      <Handle
+        id={EDGE_HANDLES.source.right.bottom}
+        type="source"
+        position={Position.Right}
+        className={[styles.edgeHandle, styles.bottomHandle].join(" ")}
+        isConnectable={false}
+      />
+
+      <Handle
+        id={EDGE_HANDLES.source.left.top}
+        type="source"
+        position={Position.Left}
+        className={[styles.edgeHandle, styles.topHandle].join(" ")}
+        isConnectable={false}
+      />
+      <Handle
+        id={EDGE_HANDLES.source.left.mid}
+        type="source"
+        position={Position.Left}
+        className={[styles.edgeHandle, styles.midHandle].join(" ")}
+        isConnectable={false}
+      />
+      <Handle
+        id={EDGE_HANDLES.source.left.bottom}
+        type="source"
+        position={Position.Left}
+        className={[styles.edgeHandle, styles.bottomHandle].join(" ")}
+        isConnectable={false}
+      />
 
       <Handle
         id="self-loop-target"
         type="target"
         position={Position.Top}
         className={styles.selfLoopHandle}
+        isConnectable={false}
       />
 
       <Handle
@@ -91,6 +203,7 @@ function FANode({ data }: { data: FlowNodeData }) {
         type="source"
         position={Position.Top}
         className={styles.selfLoopHandle}
+        isConnectable={false}
       />
 
       <div>{data.label}</div>
@@ -98,20 +211,62 @@ function FANode({ data }: { data: FlowNodeData }) {
   );
 }
 
-
 const nodeTypes = {
   faNode: FANode,
 };
 
+function getStateOrder(alias: string): number {
+  const parsed = Number.parseInt(alias.replace(/^S/i, ""), 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
 
+function resolveEdgeRouting(
+  source: string,
+  target: string,
+  sourceX: number,
+  targetX: number,
+  hasReverse: boolean,
+  isSelfLoop: boolean,
+): {
+  type: Edge["type"];
+  sourceHandle?: string;
+  targetHandle?: string;
+  pathOptions?: { borderRadius?: number; offset?: number };
+} {
+  if (isSelfLoop) {
+    return {
+      type: "default",
+      sourceHandle: "self-loop-source",
+      targetHandle: "self-loop-target",
+    };
+  }
+
+  const sourceSide: EdgeSide = sourceX <= targetX ? "right" : "left";
+  const targetSide: EdgeSide = sourceX <= targetX ? "left" : "right";
+
+  if (!hasReverse) {
+    return {
+      type: "smoothstep",
+      sourceHandle: EDGE_HANDLES.source[sourceSide].mid,
+      targetHandle: EDGE_HANDLES.target[targetSide].mid,
+      pathOptions: { borderRadius: 16, offset: 20 },
+    };
+  }
+
+  const isReverseDirection = getStateOrder(source) > getStateOrder(target);
+  const lane: EdgeLane = isReverseDirection ? "bottom" : "top";
+
+  return {
+    type: "smoothstep",
+    sourceHandle: EDGE_HANDLES.source[sourceSide][lane],
+    targetHandle: EDGE_HANDLES.target[targetSide][lane],
+    pathOptions: { borderRadius: 14, offset: 28 },
+  };
+}
 
 function toFlowNode(node: Node<FlowNodeData>): Node<FlowNodeData> {
   const isStart = Boolean(node.data.isStart);
   const isAccept = Boolean(node.data.isAccept);
-
-  const classNames = [styles.faNode];
-  if (isStart) classNames.push(styles.startNode);
-  if (isAccept) classNames.push(styles.acceptNode);
 
   return {
     ...node,
@@ -151,6 +306,13 @@ export default function GraphView({
       position: { x: 0, y: 0 },
     }));
 
+    const layoutedNodes = simpleLayout(rawNodes).map((node) =>
+      toFlowNode(node),
+    );
+    const positionedNodeMap = new Map(
+      layoutedNodes.map((node) => [node.id, node.position]),
+    );
+
     const edgeMap = new Map<
       string,
       {
@@ -184,25 +346,40 @@ export default function GraphView({
       }
     });
 
-    const mergedEdges: Edge[] = [...edgeMap.values()].map((edge) => {
-      const isSelfLoop = edge.source === edge.target;
+    const mergedEdges: Edge[] = [...edgeMap.values()]
+      .map((edge) => {
+        const isSelfLoop = edge.source === edge.target;
+        const reverseKey = `${edge.target}-${edge.source}`;
+        const hasReverse = edgeMap.has(reverseKey);
+        const sourcePosition = positionedNodeMap.get(edge.source);
+        const targetPosition = positionedNodeMap.get(edge.target);
 
-      return {
-        id: `${edge.source}-${edge.target}`,
-        source: edge.source,
-        target: edge.target,
-        label: [...edge.labels].sort().join(","),
-        animated: edge.animated,
-        type: isSelfLoop ? "default" : "smoothstep",
-        sourceHandle: isSelfLoop ? "self-loop-source" : undefined,
-        targetHandle: isSelfLoop ? "self-loop-target" : undefined,
-        className: isSelfLoop ? styles.selfLoopEdge : undefined,
-      };
-    });
+        if (!sourcePosition || !targetPosition) {
+          return null;
+        }
 
-    const layoutedNodes = simpleLayout(rawNodes).map((node) =>
-      toFlowNode(node),
-    );
+        const routing = resolveEdgeRouting(
+          edge.source,
+          edge.target,
+          sourcePosition.x,
+          targetPosition.x,
+          hasReverse,
+          isSelfLoop,
+        );
+
+        return {
+          id: `${edge.source}-${edge.target}`,
+          source: edge.source,
+          target: edge.target,
+          label: [...edge.labels].sort().join(","),
+          animated: edge.animated,
+          type: routing.type as Edge["type"],
+          pathOptions: routing.pathOptions,
+          sourceHandle: routing.sourceHandle,
+          targetHandle: routing.targetHandle,
+        } as Edge;
+      })
+      .filter((edge): edge is Edge => edge !== null);
 
     const styledEdges = mergedEdges.map((edge) => ({
       ...edge,
@@ -227,6 +404,17 @@ export default function GraphView({
     };
   }, [nodes, edges]);
 
+  const [renderNodes, setRenderNodes, onNodesChange] = useNodesState(flowNodes);
+  const [renderEdges, setRenderEdges, onEdgesChange] = useEdgesState(flowEdges);
+
+  useEffect(() => {
+    setRenderNodes(flowNodes);
+  }, [flowNodes, setRenderNodes]);
+
+  useEffect(() => {
+    setRenderEdges(flowEdges);
+  }, [flowEdges, setRenderEdges]);
+
   if (error) {
     return <section className={styles.error}>图渲染失败：{error}</section>;
   }
@@ -247,11 +435,14 @@ export default function GraphView({
       </div>
 
       <div className={styles.canvas}>
-        <ReactFlow 
-        nodeTypes={nodeTypes}
-        nodes={flowNodes} 
-        edges={flowEdges} 
-        fitView
+        <ReactFlow
+          nodeTypes={nodeTypes}
+          nodes={renderNodes}
+          edges={renderEdges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodesDraggable
+          fitView
         >
           <Controls />
           <Background gap={22} size={1} color="#d3ddef" />

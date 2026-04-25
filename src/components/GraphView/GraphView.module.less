@@ -57,6 +57,32 @@
   box-shadow: 0 8px 16px rgba(16, 30, 56, 0.16);
   position: relative;
   overflow: visible;
+  cursor: grab;
+}
+
+.faNode:active {
+  cursor: grabbing;
+}
+
+.edgeHandle {
+  width: 8px;
+  height: 8px;
+  border: 1px solid #3f5379;
+  background: #f4f8ff;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.topHandle {
+  top: 26%;
+}
+
+.midHandle {
+  top: 50%;
+}
+
+.bottomHandle {
+  top: 74%;
 }
 
 .selfLoopHandle {
