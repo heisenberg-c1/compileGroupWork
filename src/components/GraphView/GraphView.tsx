@@ -72,6 +72,47 @@ const EDGE_HANDLES = {
 
 type EdgeLane = keyof typeof EDGE_HANDLES.target.left;
 type EdgeSide = keyof typeof EDGE_HANDLES.target;
+type EdgeVisualTheme = {
+  stroke: string;
+  marker: string;
+  labelBg: string;
+  labelText: string;
+};
+
+const EDGE_VISUAL_THEMES: EdgeVisualTheme[] = [
+  { stroke: "#1d4ed8", marker: "#1e40af", labelBg: "#dbeafe", labelText: "#1e3a8a" },
+  { stroke: "#0f766e", marker: "#115e59", labelBg: "#ccfbf1", labelText: "#134e4a" },
+  { stroke: "#be185d", marker: "#9d174d", labelBg: "#fce7f3", labelText: "#831843" },
+  { stroke: "#9333ea", marker: "#7e22ce", labelBg: "#f3e8ff", labelText: "#581c87" },
+  { stroke: "#c2410c", marker: "#9a3412", labelBg: "#ffedd5", labelText: "#7c2d12" },
+  { stroke: "#0369a1", marker: "#075985", labelBg: "#e0f2fe", labelText: "#0c4a6e" },
+  { stroke: "#15803d", marker: "#166534", labelBg: "#dcfce7", labelText: "#14532d" },
+  { stroke: "#b45309", marker: "#92400e", labelBg: "#fef3c7", labelText: "#78350f" },
+];
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function resolveEdgeTheme(source: string, target: string, label: string): EdgeVisualTheme {
+  if (source === target) {
+    return {
+      stroke: "#7c3aed",
+      marker: "#6d28d9",
+      labelBg: "#ede9fe",
+      labelText: "#4c1d95",
+    };
+  }
+
+  const key = `${source}->${target}|${label}`;
+  const index = hashString(key) % EDGE_VISUAL_THEMES.length;
+  return EDGE_VISUAL_THEMES[index] ?? EDGE_VISUAL_THEMES[0];
+}
 
 function simpleLayout(nodes: Node<FlowNodeData>[]): Node<FlowNodeData>[] {
   const GAP_X = 160;
@@ -381,21 +422,29 @@ export default function GraphView({
       })
       .filter((edge): edge is Edge => edge !== null);
 
-    const styledEdges = mergedEdges.map((edge) => ({
-      ...edge,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: "#4b628c",
-        width: 18,
-        height: 18,
-      },
-      labelShowBg: true,
-      labelBgBorderRadius: 6,
-      labelBgPadding: [6, 3] as [number, number],
-      labelBgStyle: { fill: "#f2f6fd", opacity: 0.96 },
-      labelStyle: { fill: "#1f3357", fontWeight: 700 },
-      style: { stroke: "#5f7396", strokeWidth: 1.6 },
-    }));
+    const styledEdges = mergedEdges.map((edge) => {
+      const theme = resolveEdgeTheme(
+        edge.source,
+        edge.target,
+        typeof edge.label === "string" ? edge.label : "",
+      );
+
+      return {
+        ...edge,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: theme.marker,
+          width: 20,
+          height: 20,
+        },
+        labelShowBg: true,
+        labelBgBorderRadius: 6,
+        labelBgPadding: [6, 3] as [number, number],
+        labelBgStyle: { fill: theme.labelBg, opacity: 0.96 },
+        labelStyle: { fill: theme.labelText, fontWeight: 700 },
+        style: { stroke: theme.stroke, strokeWidth: 2.1 },
+      };
+    });
 
     return {
       flowNodes: layoutedNodes,
